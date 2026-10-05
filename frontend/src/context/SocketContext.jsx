@@ -4,6 +4,19 @@ import { useAuth } from './AuthContext';
 
 const SocketContext = createContext(null);
 
+const getSocketURL = () => {
+  if (import.meta.env.VITE_SOCKET_URL) {
+    return import.meta.env.VITE_SOCKET_URL;
+  }
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL.replace(/\/api\/?$/, '');
+  }
+  if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+    return window.location.origin;
+  }
+  return 'https://papertracker-4691.onrender.com';
+};
+
 export const SocketProvider = ({ children }) => {
   const { user } = useAuth();
   const [socket, setSocket] = useState(null);
@@ -11,12 +24,11 @@ export const SocketProvider = ({ children }) => {
   const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
-    // Dynamic socket connection URL
-    const socketUrl = import.meta.env.VITE_SOCKET_URL ||
-      (import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/\/api\/?$/, '') : window.location.origin);
+    const socketUrl = getSocketURL();
 
     const newSocket = io(socketUrl, {
       transports: ['websocket', 'polling'],
+      withCredentials: true,
     });
 
     setSocket(newSocket);

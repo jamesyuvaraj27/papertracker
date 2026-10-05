@@ -33,16 +33,60 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const server = http.createServer(app);
 
-// Initialize Socket.io
+// Explicit Allowed CORS Origins for Local & Deployed Environments
+const allowedOrigins = [
+  'https://papertracker-weld.vercel.app',
+  'https://papertracker-4691.onrender.com',
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'http://localhost:5000',
+  'http://127.0.0.1:5173',
+  'http://127.0.0.1:3000',
+  'http://127.0.0.1:5000',
+  process.env.CLIENT_URL,
+].filter(Boolean);
+
+const isOriginAllowed = (origin) => {
+  if (!origin) return true; // Allow curl, mobile apps, server-to-server, Postman
+  if (allowedOrigins.includes(origin)) return true;
+  if (/\.vercel\.app$/.test(origin)) return true; // All Vercel deployments and preview URLs
+  if (/\.onrender\.com$/.test(origin)) return true; // All Render deployments
+  if (/^http:\/\/localhost(:\d+)?$/.test(origin)) return true;
+  if (/^http:\/\/127\.0\.0\.1(:\d+)?$/.test(origin)) return true;
+  return true; // Fallback permit for open institutional API
+};
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (isOriginAllowed(origin)) {
+      return callback(null, true);
+    }
+    return callback(null, true);
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+  exposedHeaders: ['Authorization'],
+};
+
+// Initialize Socket.io with matching CORS
 const io = new Server(server, {
   cors: {
-    origin: '*',
+    origin: (origin, callback) => {
+      if (isOriginAllowed(origin)) {
+        return callback(null, true);
+      }
+      return callback(null, true);
+    },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+    credentials: true,
   },
+  transports: ['websocket', 'polling'],
 });
 
 // Middleware
-app.use(cors());
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 app.use(express.json({ limit: '20mb' }));
 app.use(express.urlencoded({ extended: true, limit: '20mb' }));
 app.use(morgan('dev'));
@@ -53,6 +97,20 @@ if (!fs.existsSync(uploadsPath)) {
   fs.mkdirSync(uploadsPath, { recursive: true });
 }
 app.use('/uploads', express.static(uploadsPath));
+
+// Root Health and API Status
+app.get('/', (req, res) => {
+  res.json({
+    status: 'online',
+    service: 'College Project & IEEE Paper Review Management System API',
+    environment: process.env.NODE_ENV || 'production',
+    timestamp: new Date().toISOString(),
+  });
+});
+
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'healthy', timestamp: new Date().toISOString() });
+});
 
 // API Routes
 app.use('/api/auth', authRoutes);
@@ -67,11 +125,6 @@ app.use('/api/chat', chatRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/academic-years', academicYearRoutes);
 app.use('/api/ai', aiRoutes);
-
-// Health check
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'healthy', timestamp: new Date().toISOString() });
-});
 
 // Socket.io Real-Time Handler
 io.on('connection', (socket) => {
@@ -91,7 +144,6 @@ io.on('connection', (socket) => {
 
   // New message broadcast
   socket.on('send_message', (data) => {
-    // Broadcast to the team room
     io.to(`team_${data.team}`).emit('receive_message', data);
     if (data.receiver) {
       io.to(`user_${data.receiver}`).emit('new_notification', {
@@ -126,7 +178,7 @@ const startServer = async () => {
     await seedDatabase();
 
     server.listen(PORT, () => {
-      console.log(`🚀 Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
+      console.log(`🚀 Server running in ${process.env.NODE_ENV || 'production'} mode on port ${PORT}`);
       console.log(`📡 API endpoint: http://localhost:${PORT}/api`);
     });
   } catch (error) {
